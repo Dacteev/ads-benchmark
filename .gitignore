@@ -1,0 +1,8 @@
+.DS_Store
+data/
+build/
+Makefile
+render.php
+stats.gnu
+stats.r.tpl
+stats_master.r
