@@ -27,7 +27,7 @@ fi
 
 if [ -n "$2" ]
 then
-    owner=$2
+    owner=$(echo -n $2 | tr ' ' '_')
 fi
 
 if [ -n "$3" ]
@@ -95,8 +95,8 @@ benchmark_info() {
 
 ## Benchmark preparation
 benchmark_info
-echo "info: Output directory set to: $output_dir"
-echo "info: Files nomenclature: $output_dir/${owner}-${domain}-{timestamp}.har"
+echo "info: --- Output directory set to:  $output_dir"
+echo "info: --- Files nomenclature:       $output_dir/${owner}-${domain}-{timestamp}.har"
 
 if [[ ! -e "$output_dir" ]]
 then
