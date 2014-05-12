@@ -83,9 +83,10 @@ benchmark_info() {
 
         # Getting the isp name
         isp=$(grep "the-isp" $tmp_file \
-		| sed -e 's/.*the-isp">\([a-zA-Z\/ -]*\).*/\1/g' \
+		| sed -e 's/.*the-isp">\([a-zA-Z\/ -\.]*\).*<\/div>/\1/g' \
 		| tr '[:upper:]' '[:lower:]' \
-		| tr "/ -" '_')
+		| tr "/ -" '_' \
+        | tr -d '.')
 
         output_dir="${output_dir}/${country}/${city}/${isp}"
 
@@ -95,21 +96,21 @@ benchmark_info() {
 
 ## Benchmark preparation
 benchmark_info
-echo "info: --- Output directory set to:  $output_dir"
-echo "info: --- Files nomenclature:       $output_dir/${owner}-${domain}-{timestamp}.har"
+echo "info: --- Output directory set to:  ${output_dir}"
+echo "info: --- Files nomenclature:       ${output_dir}/${owner}-${domain}-{timestamp}.har"
 
 if [[ ! -e "$output_dir" ]]
 then
     mkdir -p $output_dir
 fi
 
-## Benchmark loop 
+## Benchmark loop
 while true
 do
     timestamp=$(date +%s)
 
     echo -n "Creating ${owner}-${domain}-${timestamp}.har"
-    phantomjs netsniff.js $1 > "data/${country}/${city}/${isp}/${owner}-${domain}-${timestamp}.har" 2> >(grep -v CoreText 1>&2)
+    phantomjs netsniff.js $1 > "${output_dir}/${owner}-${domain}-${timestamp}.har" 2> >(grep -v CoreText 1>&2)
     echo -e "\t\t[  ok  ]"
 
     sleep "${sleeping}"
