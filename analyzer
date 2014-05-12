@@ -1,0 +1,222 @@
+#!/usr/bin/env php
+<?php
+
+class HarRecursiveFilterIterator extends RecursiveFilterIterator
+{
+    public function accept()
+    {
+        return $this->hasChildren() || ($this->current()->getExtension() == "har");
+    }
+}
+
+if (!function_exists('stats_standard_deviation')) {
+    /**
+     * This user-land implementation follows the implementation quite strictly;
+     * it does not attempt to improve the code or algorithm in any way. It will
+     * raise a warning if you have fewer than 2 values in your array, just like
+     * the extension does (although as an E_USER_WARNING, not E_WARNING).
+     *
+     * @param array $a
+     * @param bool $sample [optional] Defaults to false
+     * @return float|bool The standard deviation or false on error.
+     */
+    function stats_standard_deviation(array $a, $sample = false) {
+        $n = count($a);
+
+        if ($n === 0) {
+            trigger_error("The array has zero elements", E_USER_WARNING);
+            return false;
+        }
+
+        if ($sample && $n === 1) {
+            trigger_error("The array has only 1 element", E_USER_WARNING);
+            return false;
+        }
+
+        $mean = array_sum($a) / $n;
+        $carry = 0.0;
+
+        foreach ($a as $val) {
+            $d = ((double) $val) - $mean;
+            $carry += $d * $d;
+        }
+
+        if ($sample) {
+           --$n;
+        }
+
+        return sqrt($carry / $n);
+    }
+}
+
+class Analyzer
+{
+    protected $timings = [
+        "Dacteev" => [],
+        "Google" => []
+    ];
+
+    public function __construct($path)
+    {
+        $iterator = new RecursiveIteratorIterator(
+            new HarRecursiveFilterIterator(
+                new RecursiveDirectoryIterator($path)
+            ),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        $total = 0;
+
+        foreach ($iterator as $fileinfo) {
+            $total++;
+        }
+
+        $iterator->rewind();
+
+        $i = 0;
+        foreach ($iterator as $filename => $fileinfo) {
+            $this->process($filename);
+
+            $i++;
+
+            echo "\rProcessing " . number_format($i * 100 / $total, 2) . "%";
+        }
+
+        echo PHP_EOL;
+    }
+
+    public function process($filename)
+    {
+        $time = str_replace(["+", "-"], "", filter_var($filename, FILTER_SANITIZE_NUMBER_INT));
+
+        $content = json_decode(file_get_contents($filename), true);
+
+        $dacteev_is_valid = false;
+        $google_is_valid = false;
+
+        if (!isset($content["log"]["entries"])) {
+            return;
+        }
+
+        foreach ($content["log"]["entries"] as $index => $item) {
+
+            if ($item["response"]["status"] != 200) {
+                continue;
+            }
+
+            if (strpos($item["request"]["url"], "comet.dacteev.com/spaceev") !== false) {
+                $this->timings["Dacteev"][$time] = $item["time"];
+                $dacteev_is_valid = true;
+            } else if (strpos($item["request"]["url"], "googleads.g.doubleclick.net/pagead/ads") !== false) {
+                $this->timings["Google"][$time] = $item["time"];
+                $google_is_valid = true;
+            }
+        }
+
+        unset($content);
+
+        if (!$dacteev_is_valid || !$google_is_valid) {
+
+            if (isset($this->timings["Dacteev"][$time])) {
+                unset($this->timings["Dacteev"][$time]);
+            }
+
+            if (isset($this->timings["Google"][$time])) {
+                unset($this->timings["Google"][$time]);
+            }
+        }
+    }
+
+    public function save($filename)
+    {
+        // csv
+        $data = [
+            "head" => ["timestamp"]
+        ];
+
+        foreach ($this->timings as $label => $value) {
+            $data["head"][] = $label;
+        }
+
+        foreach ($this->timings as $label => $values) {
+            foreach ($values as $time => $value) {
+                if (!isset($data[$time])) {
+                    $data[$time] = [$time];
+                }
+
+                $data[$time][] = $value;
+            }
+        }
+
+        $fp = fopen(__DIR__ . "/build/" . $filename . ".csv", "w");
+
+        foreach ($data as $fields) {
+            fputcsv($fp, $fields, "\t");
+        }
+
+        fclose($fp);
+
+        // R
+        $content = file_get_contents(__DIR__ . "/stats.r.tpl");
+        $content = str_replace("{DACTEEV}", implode(",", $this->timings["Dacteev"]), $content);
+        $content = str_replace("{GOOGLE}", implode(",", $this->timings["Google"]), $content);
+        file_put_contents(__DIR__ . "/build/" . $filename . ".r", $content);
+
+        // gnuplot
+        $data = "";
+
+        foreach ($this->timings as $label => $value) {
+            $data .= $label . " " .
+                (array_sum($this->timings[$label]) / count($this->timings[$label])) .
+                " " .
+                stats_standard_deviation($this->timings[$label]) .
+                PHP_EOL;
+        }
+
+        $data .= PHP_EOL;
+
+        file_put_contents(__DIR__ . "/build/" . $filename . ".dat", $data);
+    }
+
+    public function debug()
+    {
+        $total_dacteev = count($this->timings["Dacteev"]);
+        $total_google = count($this->timings["Google"]);
+
+        echo "Dacteev" . PHP_EOL;
+        echo "\tNumber of items : " . $total_dacteev . PHP_EOL;
+        echo "\tAverage : " . (array_sum($this->timings["Dacteev"]) / $total_dacteev) . PHP_EOL;
+        echo "\tStandard deviation : " . stats_standard_deviation($this->timings["Dacteev"]) . PHP_EOL;
+        echo PHP_EOL;
+        echo "Google" . PHP_EOL;
+        echo "\tNumber of items : " . $total_google . PHP_EOL;
+        echo "\tAverage : " . (array_sum($this->timings["Google"]) / $total_google) . PHP_EOL;
+        echo "\tStandard deviation : " . stats_standard_deviation($this->timings["Google"]) . PHP_EOL;
+    }
+}
+
+
+
+
+$path = "data/";
+$output = "stats";
+$country = null;
+$city = null;
+
+if (isset($argv[1])) {
+    $country = $argv[1];
+    $output .= "-" . $country;
+    $path .= $country . "/";
+}
+
+if (isset($argv[2])) {
+    $city = $argv[2];
+    $output .= "-" . $city;
+    $path .= $city . "/";
+}
+
+$analyzer = new Analyzer($path);
+
+$analyzer->debug();
+$analyzer->save($output);
+
