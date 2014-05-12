@@ -3,10 +3,14 @@
 hash phantomjs 2>/dev/null || { echo >&2 "I require phantomjs but it's not installed.  Aborting."; exit 1; }
 
 usage() {
-    echo "Usage: $0 \"http://example.com\" <fileprefix> <sleepsecs>"
-    echo "    $0 \"http://example.com\" \"first name-city-name\""
+    echo "Usage: $0 \"http://example.com\" <owner> <sleepsecs>"
+    echo "    $0 \"http://example.com\" \"first name\""
 }
 
+country=""
+city=""
+isp=""
+owner=$(whoami)
 sleeping=60
 
 if [ -z "$1" ]
@@ -15,10 +19,9 @@ then
     exit 1
 fi
 
-fileprefix=$(hostname)-$(whoami)
 if [ -n "$2" ]
 then
-    fileprefix=$2
+    owner=$2
 fi
 
 if [ -n "$3" ]
@@ -43,17 +46,17 @@ then
     exit 1
 fi
 
-if [[ ! -e "data/" ]]
+if [[ ! -e "data/${country}/${city}/${isp}/" ]]
 then
-    mkdir "data/"
+    mkdir -p "data/${country}/${city}/${isp}/"
 fi
 
 while true
 do
     timestamp=$(date +%s)
 
-    echo -n "Create ${fileprefix}-${domain}-${timestamp}.har"
-    phantomjs netsniff.js $1 > "data/${fileprefix}-${domain}-${timestamp}.har" 2> >(grep -v CoreText 1>&2)
+    echo -n "Create ${owner}-${domain}-${timestamp}.har"
+    phantomjs netsniff.js $1 > "data/${country}/${city}/${isp}/${owner}-${domain}-${timestamp}.har" 2> >(grep -v CoreText 1>&2)
     echo -e "\t\t[  ok  ]"
 
     sleep "${sleeping}"
